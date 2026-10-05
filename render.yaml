@@ -1,0 +1,30 @@
+# Render Blueprint: backend (Express + Socket.IO). Render Dashboard -> New -> Blueprint -> repo chuno.
+# Frontend Vercel par hai (client/vercel.json). Poori checklist: docs/DEPLOYMENT.md
+services:
+  - type: web
+    name: watch-party-server
+    runtime: node
+    region: singapore # India ke sabse paas
+    plan: free
+    rootDir: . # repo root (npm workspaces: shared + server)
+    # devDependencies (typescript) build ke liye chahiye: Render build mein NODE_ENV=production hota hai, isliye --include=dev
+    buildCommand: npm install --include=dev && npm run build -w shared && npm run build -w server
+    startCommand: npm run start -w server
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true # Render khud lamba random secret banata hai
+      - key: CLIENT_URL
+        sync: false # dashboard mein Vercel URL daalo (https://<app>.vercel.app, trailing slash nahi)
+      - key: REDIS_URL
+        sync: false # Upstash/Render Redis connection string; blank rahe to in-memory fallback
+      - key: MONGO_URI
+        sync: false # MongoDB Atlas connection string; blank rahe to memory-only persistence
+      - key: REQUIRE_AUTH
+        value: "false" # true karne par guest create/join disabled; account login required
+      # PORT Render khud set karta hai; server process.env.PORT par listen karta hai.

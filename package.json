@@ -1,0 +1,34 @@
+{
+  "name": "watch-party",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev:server": "npm run build -w shared && npm run dev -w server",
+    "dev:client": "npm run build -w shared && npm run dev -w client",
+    "build": "npm run build -w shared && npm run build -w server && npm run build -w client",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "npm test -w server && npm test -w client",
+    "start": "npm run start -w server",
+    "test:server": "npm test -w server",
+    "test:client": "npm test -w client",
+    "audit:lockfile": "npm audit --package-lock-only",
+    "verify:phase15": "npm run build && npm test && npm run lint && npm audit"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.9",
+    "typescript-eslint": "^8.71.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

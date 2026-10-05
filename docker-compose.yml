@@ -1,0 +1,61 @@
+# Phase 13 local scalability lab: 3 stateless server replicas + Redis + Mongo + Nginx.
+# Run: docker compose up --build --scale server=3
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - "4000"
+    environment:
+      PORT: 4000
+      NODE_ENV: development
+      LOADTEST_QUERY_AUTH: "true"
+      LOADTEST_AUTH_TOKEN: "phase13-artillery-local-token-change-me"
+      CLIENT_URL: http://localhost
+      JWT_SECRET: phase13-local-secret-change-me-123456
+      REDIS_URL: redis://redis:6379
+      MONGO_URI: mongodb://mongo:27017/watch-party
+      REQUIRE_AUTH: "false"
+      MAX_PARTICIPANTS: 100
+      GRACE_PERIOD_MS: 30000
+      EMPTY_ROOM_TTL_MS: 600000
+      REQUEST_TTL_MS: 60000
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.26-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - server
+
+volumes:
+  redis-data:
+  mongo-data:

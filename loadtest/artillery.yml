@@ -1,0 +1,57 @@
+# Phase 13 Artillery Socket.IO load test.
+# Example: docker compose up --build --scale server=3
+# Then PowerShell: $env:TARGET_URL="http://localhost"; $env:LOADTEST_AUTH_TOKEN="phase13-artillery-local-token-change-me"; npx artillery run loadtest/artillery.yml
+# The local Docker lab enables LOADTEST_QUERY_AUTH and maps this static token to a unique socket.id-based test identity.
+config:
+  target: "{{ $processEnvironment.TARGET_URL }}"
+  phases:
+    - duration: 10
+      arrivalRate: 20
+      rampTo: 100
+      name: warmup
+    - duration: 60
+      arrivalRate: 100
+      name: steady-state
+  engines:
+    socketio: {}
+  processor: "./processor.cjs"
+  socketio:
+    transports:
+      - websocket
+    query:
+      token: "{{ $processEnvironment.LOADTEST_AUTH_TOKEN }}"
+  variables:
+    targetRooms: 100
+
+scenarios:
+  - name: "distributed-rooms"
+    weight: 94
+    engine: socketio
+    flow:
+      - function: "prepareUser"
+      - emit:
+          channel: "join_room"
+          data:
+            roomId: "{{ roomId }}"
+            username: "{{ username }}"
+      - think: 8
+      - emit:
+          channel: "request_sync"
+          data: {}
+      - think: 4
+
+  - name: "hot-room"
+    weight: 6
+    engine: socketio
+    flow:
+      - function: "prepareHotRoomUser"
+      - emit:
+          channel: "join_room"
+          data:
+            roomId: "{{ roomId }}"
+            username: "{{ username }}"
+      - think: 5
+      - emit:
+          channel: "request_sync"
+          data: {}
+      - think: 5
