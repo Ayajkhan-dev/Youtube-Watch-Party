@@ -2,10 +2,27 @@
 
 Watch YouTube videos together in real time. Create a room, share the code, and every participant sees the same play, pause, seek and video change at the same moment. Access is controlled by roles (Host, Moderator, Participant, Viewer) that are enforced on the server.
 
-**Live demo:** https://youtube-watch-party-khaki.vercel.app/   _(frontend)_
+## 🌐 Live demo
 
-               https://watch-party-server-ioq8.onrender.com/health` _(backend)_
+- **Frontend:** https://youtube-watch-party-khaki.vercel.app
+- **Backend health check:** https://watch-party-server-ioq8.onrender.com/health
 
+> ⏳ The backend runs on Render's free tier and sleeps after about 15 minutes of inactivity. The first request after that can take 30-50 seconds. Open the health-check link once and wait for the response before testing.
+
+### ✅ Accounts: sign up and sign in are live
+
+Users can **create an account (Sign up) and log in (Sign in)** with email and password. Accounts are stored in **MongoDB Atlas**, and rooms are persisted there too. Guests can still join a room with just a name, so login is optional for a quick demo.
+
+**Production setup:** Render (Singapore) for the backend, Vercel for the frontend, **MongoDB Atlas** (accounts and persistent rooms) and **Upstash Redis** (room state and Socket.IO adapter).
+
+## ⚡ Quick test
+
+1. Open the frontend link. Optionally **sign up** and **sign in**, or continue as a guest.
+2. Enter a name and click **Create room** (you become the Host).
+3. Open the same link in an incognito window, enter another name and join with the room code.
+4. As Host, paste a YouTube URL, then play, pause and seek. The second window follows instantly.
+5. Promote the second user to Moderator from the participant list and check that their controls unlock.
+6. Try chat and emoji reactions in both windows.
 
 ## Features
 
@@ -15,9 +32,11 @@ Watch YouTube videos together in real time. Create a room, share the code, and e
 | Rooms | Create a room (creator = Host), join by link or 6-character code, participant list with roles |
 | Role-based access | Host, Moderator, Participant, Viewer. Host can assign roles, remove participants and transfer host |
 | Approval flow | Participants request play / pause / seek / change video / moderator role; Host/Moderators approve or reject |
+| **Accounts** | **Sign up and sign in with email and password (JWT), guest access still supported** |
+| **Persistence** | **Rooms and users stored in MongoDB Atlas** |
 | Social | Live chat and emoji reactions |
 | Resilience | Auto-reconnect with the role preserved, 30s grace period, automatic host hand-over |
-| Optional | Accounts (login / sign up), MongoDB persistence, Redis for horizontal scaling |
+| Scaling | Redis for room state and the Socket.IO Redis adapter (horizontal scaling) |
 
 ## Tech stack
 
@@ -27,7 +46,7 @@ Watch YouTube videos together in real time. Create a room, share the code, and e
 | Backend | Node.js, Express, Socket.IO, Zod (payload validation), JWT |
 | Realtime | WebSockets via Socket.IO (websocket-only transport) |
 | Video | YouTube IFrame Player API |
-| Data (optional) | Redis (room state + Pub/Sub adapter), MongoDB (persistent rooms, accounts) |
+| Data | MongoDB Atlas (accounts, persistent rooms), Redis / Upstash (room state + Pub/Sub adapter) |
 | Deployment | Render (backend) + Vercel / Netlify (frontend), Docker + Nginx for the scaling lab |
 
 ## Project structure
@@ -53,6 +72,8 @@ npm run dev:client   # terminal 2 -> http://localhost:5173
 
 Open http://localhost:5173, enter a name and click **Create room**. Open the room link in a second browser window (or an incognito window) to join as a Participant.
 
+Redis and MongoDB are optional locally. Leave `REDIS_URL` and `MONGO_URI` empty to use the in-memory store (sign up / sign in needs `MONGO_URI`).
+
 ### Environment variables
 
 | Variable | Where | Description |
@@ -60,8 +81,8 @@ Open http://localhost:5173, enter a name and click **Create room**. Open the roo
 | `PORT` | server | HTTP/WebSocket port (default `4000`) |
 | `CLIENT_URL` | server | Allowed frontend origin(s) for CORS and WebSocket Origin check, comma separated, no trailing slash. **Required in production** |
 | `JWT_SECRET` | server | Secret for signing tokens (min 16 chars). A weak/dev value is rejected in production |
-| `REDIS_URL` | server, optional | Enables Redis room state and the Socket.IO Redis adapter. In-memory store is used when empty |
-| `MONGO_URI` | server, optional | Enables persistent rooms and account login / sign up |
+| `REDIS_URL` | server, optional | Enables Redis room state and the Socket.IO Redis adapter (use a `rediss://` URL for Upstash). In-memory store is used when empty |
+| `MONGO_URI` | server, optional | Enables persistent rooms and account **sign up / sign in** |
 | `REQUIRE_AUTH` | server, optional | `true` disables guest access and requires an account (default `false`) |
 | `MAX_PARTICIPANTS`, `GRACE_PERIOD_MS`, `EMPTY_ROOM_TTL_MS`, `REQUEST_TTL_MS` | server, optional | Room limits and timers |
 | `VITE_SERVER_URL` | client | Backend URL, e.g. `http://localhost:4000` |
@@ -91,13 +112,14 @@ The creator of a room is the Host automatically; everyone who joins is a Partici
 
 A short summary; the full description with sequence diagrams is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-1. **Create / join over REST.** `POST /api/rooms` creates a room and returns a room code plus a signed JWT identity. Guests join with `POST /api/rooms/:id/guest`.
-2. **Connect over WebSocket.** The client opens a Socket.IO connection (websocket-only) with the JWT in `auth.token`. The server verifies it and keeps `userId` / `roomId` in `socket.data`, never trusting them from payloads.
-3. **Join the room.** The client emits `join_room`; the server adds the participant to the Socket.IO room, assigns the role, replies with a snapshot (participants, playback state, chat) and broadcasts `user_joined`.
-4. **Control playback.** Host/Moderator emit `play`, `pause`, `seek` or `change_video`. Each handler runs **validate (Zod) → authorize (PermissionService) → mutate state → broadcast**. The server broadcasts `sync_state` with a version number and server time.
-5. **Stay in sync.** Every client applies `sync_state` to its YouTube player using a server-clock offset (median of 5 `time_sync` samples), seeks if drift exceeds 1.0–1.5 s, and re-checks every 2 s. Player events are never sent back to the server, so there is no echo loop.
-6. **Roles and approvals.** `assign_role`, `remove_participant` and `transfer_host` are Host-only and broadcast `role_assigned` / `participant_removed` / `host_transferred`. Participants use `request_action`; Host/Moderators answer with `resolve_request`, which runs the same service as a direct action.
-7. **Scale out.** With `REDIS_URL` set, room state lives in Redis and the Socket.IO Redis adapter relays broadcasts between server instances.
+1. **Sign up / sign in (optional).** `POST /api/auth/register` and `POST /api/auth/login` create and verify accounts stored in MongoDB and return a signed JWT.
+2. **Create / join over REST.** `POST /api/rooms` creates a room and returns a room code plus a signed JWT identity. Guests join with `POST /api/rooms/:id/guest`.
+3. **Connect over WebSocket.** The client opens a Socket.IO connection (websocket-only) with the JWT in `auth.token`. The server verifies it and keeps `userId` / `roomId` in `socket.data`, never trusting them from payloads.
+4. **Join the room.** The client emits `join_room`; the server adds the participant to the Socket.IO room, assigns the role, replies with a snapshot (participants, playback state, chat) and broadcasts `user_joined`.
+5. **Control playback.** Host/Moderator emit `play`, `pause`, `seek` or `change_video`. Each handler runs **validate (Zod) → authorize (PermissionService) → mutate state → broadcast**. The server broadcasts `sync_state` with a version number and server time.
+6. **Stay in sync.** Every client applies `sync_state` to its YouTube player using a server-clock offset (median of 5 `time_sync` samples), seeks if drift exceeds 1.0-1.5 s, and re-checks every 2 s. Player events are never sent back to the server, so there is no echo loop.
+7. **Roles and approvals.** `assign_role`, `remove_participant` and `transfer_host` are Host-only and broadcast `role_assigned` / `participant_removed` / `host_transferred`. Participants use `request_action`; Host/Moderators answer with `resolve_request`, which runs the same service as a direct action.
+8. **Scale out.** With `REDIS_URL` set, room state lives in Redis and the Socket.IO Redis adapter relays broadcasts between server instances.
 
 ## WebSocket events
 
@@ -105,8 +127,8 @@ A short summary; the full description with sequence diagrams is in [docs/ARCHITE
 
 ## Deployment
 
-- **Backend:** Render Blueprint in [`render.yaml`](render.yaml) (build `npm install --include=dev && npm run build -w shared && npm run build -w server`, start `npm run start -w server`, health check `/health`).
-- **Frontend:** Vercel (`client/vercel.json`) or Netlify (`client/public/_redirects`); set `VITE_SERVER_URL` to the Render URL.
+- **Backend:** Render Blueprint in [`render.yaml`](render.yaml) (build `npm install --include=dev && npm run build -w shared && npm run build -w server`, start `npm run start -w server`, health check `/health`). Environment variables set on Render: `JWT_SECRET` (auto-generated), `CLIENT_URL`, `MONGO_URI`, `REDIS_URL`.
+- **Frontend:** Vercel (`client/vercel.json`, root directory `client`) or Netlify (`client/public/_redirects`); set `VITE_SERVER_URL` to the Render URL.
 - Set `CLIENT_URL` on the backend to the frontend URL. Step-by-step checklist: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Design decisions and trade-offs
@@ -114,7 +136,8 @@ A short summary; the full description with sequence diagrams is in [docs/ARCHITE
 - **Server-authoritative state:** the server owns playback state and timing, so late joiners and reconnecting clients always converge.
 - **WebSocket-only transport:** no sticky sessions needed behind a load balancer; the trade-off is no HTTP long-polling fallback.
 - **OOP structure:** `Room`, `Participant`, `RoomManager`, `PermissionService`, `PlaybackService`, `RoleService`, `RequestService` and per-feature handler classes keep domain logic free of socket code.
-- **Render free tier** sleeps after inactivity and cannot serve 1,000+ users; use managed Redis and paid multi-instance hosting for that scale ([docs/LOADTEST.md](docs/LOADTEST.md)).
+- **Optional services with fallback:** Redis and MongoDB are enabled only when their env variables are set, so the app still runs locally with the in-memory store.
+- **Render free tier** sleeps after inactivity (first request takes 30-50 s) and cannot serve 1,000+ users; use managed Redis and paid multi-instance hosting for that scale ([docs/LOADTEST.md](docs/LOADTEST.md)).
 
 ## Testing
 
