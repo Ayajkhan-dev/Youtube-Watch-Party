@@ -2,8 +2,10 @@
 
 Watch YouTube videos together in real time. Create a room, share the code, and every participant sees the same play, pause, seek and video change at the same moment. Access is controlled by roles (Host, Moderator, Participant, Viewer) that are enforced on the server.
 
-**Live demo:** `https://<your-app>.vercel.app` _(frontend)_ · `https://<your-app>.onrender.com/health` _(backend)_
-> Replace the two URLs above with your deployed links (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
+**Live demo:** https://youtube-watch-party-khaki.vercel.app/   _(frontend)_
+
+               https://watch-party-server-ioq8.onrender.com/health` _(backend)_
+
 
 ## Features
 
